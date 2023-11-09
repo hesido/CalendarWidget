@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import calendar
+import bpy
 
 from bpy.types import (
     Panel,
@@ -18,24 +19,41 @@ from bpy.utils import (
 
 bl_info = {
     "name": "Calendar Widget",
-    "blender": (2, 80, 0),
+    "blender": (3, 6, 5),
     "category": "Tools",
     "location": "View 3D > UI (N Panel)",
-    "version": (1, 0, 0),
+    "version": (1, 0, 1),
     "author": "Gorgious56",
     "description": """Simple Panel that lets the user input a date/time""",
     "doc_url": "https://github.com/Gorgious56"
 }
 
-
 class CalendarProps(PropertyGroup):
+
+    def time_updated(self, context):
+        props = context.scene.calendar_props
+        #print("Trying to update dependencies")
+        for ob in bpy.data.objects:
+            update_dependencies(ob)
+
+    
     year: IntProperty(min=1, soft_min=1900, soft_max=2100,
-                      max=9999, default=datetime.now().year)
-    month: IntProperty(min=1, max=12, default=datetime.now().month)
-    day: IntProperty(min=1, max=31)
-    hour: IntProperty(min=0, max=23, default=datetime.now().hour)
-    minute: IntProperty(min=0, max=59, default=datetime.now().minute)
-    second: IntProperty(min=0, max=59, default=datetime.now().second)
+                      max=9999, default=datetime.now().year,
+        update = time_updated)
+    month: IntProperty(min=1, max=12, default=datetime.now().month,
+        update = time_updated)
+    day: IntProperty(min=1, max=31,
+        update = time_updated)
+    hour: IntProperty(min=0, max=23, default=datetime.now().hour,
+        update = time_updated)
+    minute: IntProperty(min=0, max=59, default=datetime.now().minute,
+        update = time_updated)
+    second: IntProperty(min=0, max=59, default=datetime.now().second,
+        update = time_updated)
+    
+
+    
+    
 
 
 class Calendar_OT_Change_Date(Operator):
@@ -72,7 +90,7 @@ class Calendar_OT_Change_Date(Operator):
             props.minute = self.minute
         if self.second:
             props.second = self.second
-
+        
         return {'FINISHED'}
 
 
@@ -121,7 +139,7 @@ class CalendarPanel(Panel):
         date = datetime(year, month, 1)
 
         weekday = date.weekday()
-
+        
         for r in range(7):
             new_date = None
             row = layout.row(align=True)
@@ -158,6 +176,7 @@ class CalendarPanel(Panel):
                     col.label(text=str(label))
         layout.separator()
         row = layout.row()
+        
         for p, t in zip(("hour", "minute", "second"), (":", "''", "'")):
             split = row.split(factor=0.8)
             split.prop(props, p, text="")
@@ -171,10 +190,8 @@ class CalendarPanel(Panel):
         else:
             op = layout.operator(Calendar_OT_Change_Date.bl_idname,
                                  text=txt, emboss=emboss, depress=depress)
-
         for op_prop, op_value in op_settings.items():
             setattr(op, op_prop, op_value)
-
 
 classes = (
     CalendarPanel,
@@ -202,3 +219,18 @@ if __name__ == "__main__":
     # props = bpy.context.scene.calendar_props
     # print(props.year, props.month, props.day, props.hour, props.minute, props.second)
     register()
+
+
+def update_dependencies(ob):
+    def updateExp(d):
+        # https://blender.stackexchange.com/questions/118350/how-to-update-the-dependencies-of-a-driver-via-python-script
+        d.driver.expression += " "
+        d.driver.expression = d.driver.expression[:-1]
+    try:
+        drivers = ob.animation_data.drivers
+        for d in drivers:
+            print(d)
+            updateExp(d)
+            print("Updated")
+    except AttributeError:
+        return
