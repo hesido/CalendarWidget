@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import calendar
 import bpy
+import re
 
 from bpy.types import (
     Panel,
@@ -10,6 +11,7 @@ from bpy.types import (
 )
 from bpy.props import (
     IntProperty,
+    StringProperty,
     PointerProperty,
 )
 from bpy.utils import (
@@ -22,11 +24,81 @@ bl_info = {
     "blender": (3, 6, 5),
     "category": "Tools",
     "location": "View 3D > UI (N Panel)",
-    "version": (1, 0, 1),
-    "author": "Gorgious56",
-    "description": """Simple Panel that lets the user input a date/time""",
+    "version": (1, 1, 0),
+    "author": "Gorgious56,Hesido",
+    "description": "Simple Panel that lets the user input a date/time and set keyframes on a custom property of choice",
     "doc_url": "https://github.com/Gorgious56"
 }
+
+class AddDateKeyFrame(Operator):
+    """Add Date As KeyFrame"""
+    bl_idname = "scene.add_datekeyframe"
+    bl_label = "Add Date Keyframe"
+    
+    def evaluate_path(self, path, alternative_root):
+        # Regular expression pattern to match segments of the path
+        if(path is None or path == ""):
+            return (None, None, None)
+        pattern = r'(.+?)\.|(?:\["(.+?)"\])|([^"\[\]]+)'
+        segments = re.findall(pattern, path)
+        parent_obj = None
+        enumerate_from = 0
+
+        # If full path, start with bpy
+        if segments[0][0] == "bpy":
+            current_obj = bpy
+            enumerate_from = 1
+        else:
+            current_obj = alternative_root
+
+        for segment in segments[enumerate_from:]:
+            prop_name = segment[0] or segment[1] or segment[2]
+            
+            # Check if the property exists
+            if hasattr(current_obj, prop_name):
+                parent_obj = current_obj
+                current_obj = getattr(current_obj, prop_name)
+            else:
+                if isinstance(current_obj, list):
+                    # Check if the property is an indexed attribute in a list
+                    index = int(prop_name)  # Extract the index
+                    if 0 <= index < len(current_obj):
+                        parent_obj = current_obj
+                        current_obj = current_obj[index]
+                    else:
+                        return (None, None, None)  # Index out of range
+                elif prop_name in current_obj:
+                    parent_obj = current_obj
+                    current_obj = current_obj[prop_name]
+                else:
+                    return (None, None, None)  # Key not found
+        return (current_obj, parent_obj, prop_name)
+
+    def SetKeyFrameWithPath(self, path, value, context):
+        obj, parent_obj, prop_name = self.evaluate_path(path, context.scene)
+        if (obj != None):
+            print(parent_obj)
+            print(prop_name)
+            if hasattr(parent_obj, prop_name):
+                print(datetime.timestamp(date))
+                setattr(parent_obj, prop_name, value)
+            else:
+                if isinstance(parent_obj, list):
+                    index = int(prop_name) 
+                    if 0 <= index < len(parent_obj):
+                        parent_obj[index] = value
+                elif prop_name in parent_obj:
+                    parent_obj[prop_name] = value
+            if(hasattr(parent_obj,"keyframe_insert") and callable(getattr(parent_obj, "keyframe_insert"))):
+                parent_obj.keyframe_insert(data_path= f'["{prop_name}"]', frame=context.scene.frame_current)
+
+    def execute(self, context):
+        props = context.scene.calendar_props
+        timestamp = datetime.timestamp(datetime(props.year, props.month, props.day, props.hour, props.minute, props.second))
+        
+        self.SetKeyFrameWithPath(props.timestamp_datapath, timestamp, context)
+       
+        return {'FINISHED'}
 
 class CalendarProps(PropertyGroup):
 
@@ -35,7 +107,6 @@ class CalendarProps(PropertyGroup):
         #print("Trying to update dependencies")
         for ob in bpy.data.objects:
             update_dependencies(ob)
-
     
     year: IntProperty(min=1, soft_min=1900, soft_max=2100,
                       max=9999, default=datetime.now().year,
@@ -50,11 +121,8 @@ class CalendarProps(PropertyGroup):
         update = time_updated)
     second: IntProperty(min=0, max=59, default=datetime.now().second,
         update = time_updated)
+    timestamp_datapath: StringProperty()
     
-
-    
-    
-
 
 class Calendar_OT_Change_Date(Operator):
     """Change date in the scene properties"""
@@ -77,7 +145,8 @@ class Calendar_OT_Change_Date(Operator):
         elif self.month <= 0:
             self.year -= 1
             self.month = 12
-
+        
+        print(self.day)
         if self.day:
             props.day = self.day
         if self.month:
@@ -90,7 +159,7 @@ class Calendar_OT_Change_Date(Operator):
             props.minute = self.minute
         if self.second:
             props.second = self.second
-        
+            
         return {'FINISHED'}
 
 
@@ -101,6 +170,7 @@ class CalendarPanel(Panel):
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'Calendar'
+    
 
     def draw(self, context):
         props = context.scene.calendar_props
@@ -139,7 +209,7 @@ class CalendarPanel(Panel):
         date = datetime(year, month, 1)
 
         weekday = date.weekday()
-        
+
         for r in range(7):
             new_date = None
             row = layout.row(align=True)
@@ -176,11 +246,18 @@ class CalendarPanel(Panel):
                     col.label(text=str(label))
         layout.separator()
         row = layout.row()
-        
         for p, t in zip(("hour", "minute", "second"), (":", "''", "'")):
             split = row.split(factor=0.8)
             split.prop(props, p, text="")
             split.label(text=t)
+                
+        row = layout.row()
+        split = row.split(factor=0.4)
+        split.prop(props, "timestamp_datapath", text="Path")
+        
+        # Second Column: Button
+        operator = split.operator(AddDateKeyFrame.bl_idname, text="Add Date Keyframe", icon="KEYFRAME")
+
 
     @staticmethod
     def change_day_op(layout, txt, op_settings, emboss=True, depress=False, icon=None):
@@ -194,9 +271,9 @@ class CalendarPanel(Panel):
             setattr(op, op_prop, op_value)
 
 classes = (
+    AddDateKeyFrame,
     CalendarPanel,
     CalendarProps,
-
     Calendar_OT_Change_Date,
 )
 
@@ -206,12 +283,10 @@ def register():
         register_class(cls)
     Scene.calendar_props = PointerProperty(type=CalendarProps)
 
-
 def unregister():
     del Scene.calendar_props
     for cls in reversed(classes):
         unregister_class(cls)
-
 
 if __name__ == "__main__":
     # This will create a subpanel in the "N" panel in the 3D Viewport
