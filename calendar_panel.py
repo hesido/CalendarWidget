@@ -77,10 +77,7 @@ class AddDateKeyFrame(Operator):
     def SetKeyFrameWithPath(self, path, value, context):
         obj, parent_obj, prop_name = self.evaluate_path(path, context.scene)
         if (obj != None):
-            print(parent_obj)
-            print(prop_name)
             if hasattr(parent_obj, prop_name):
-                print(datetime.timestamp(date))
                 setattr(parent_obj, prop_name, value)
             else:
                 if isinstance(parent_obj, list):
@@ -145,8 +142,7 @@ class Calendar_OT_Change_Date(Operator):
         elif self.month <= 0:
             self.year -= 1
             self.month = 12
-        
-        print(self.day)
+
         if self.day:
             props.day = self.day
         if self.month:
